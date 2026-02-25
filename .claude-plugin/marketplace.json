@@ -1,0 +1,21 @@
+{
+  "name": "fireflyframework-skills",
+  "description": "Skills marketplace for Firefly Framework",
+  "owner": {
+    "name": "Firefly Software Solutions Inc",
+    "email": "oss@fireflysoftware.io"
+  },
+  "plugins": [
+    {
+      "name": "fireflyframework-claude-skills",
+      "description": "Claude Code skills for accelerating development with Firefly Framework",
+      "version": "1.0.0",
+      "source": "./",
+      "author": {
+        "name": "Firefly Software Solutions Inc",
+        "email": "oss@fireflysoftware.io"
+      },
+      "category": "development"
+    }
+  ]
+}
