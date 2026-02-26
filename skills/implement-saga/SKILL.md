@@ -571,3 +571,15 @@ For comprehensive testing patterns including StepVerifier-based reactive asserti
 **Not configuring persistence for production.** The default `InMemoryPersistenceProvider` loses all state on restart. For production, configure `redis`, `cache`, or `event-sourced` persistence so that the `RecoveryService` can resume stale executions.
 
 **Compensation that throws and is not retried.** If a compensation method fails and the policy is `STRICT_SEQUENTIAL` with the default error handler (`CONTINUE`), the failure is silently swallowed. For critical compensations, use `compensationCritical = true` with `CIRCUIT_BREAKER` or implement a custom `CompensationErrorHandler`.
+
+**Wrong StepStatus enum value.** The `StepStatus` enum values are: `PENDING`, `RUNNING`, `DONE`, `FAILED`, `SKIPPED`, `TIMED_OUT`, `RETRYING`. A common mistake is using `StepStatus.COMPLETED` -- this value does not exist. Always use `StepStatus.DONE` to indicate a successfully completed step.
+
+```java
+// WRONG -- StepStatus.COMPLETED does not exist
+ctx.setStepStatus(stepId, StepStatus.COMPLETED);
+
+// CORRECT
+ctx.setStepStatus(stepId, StepStatus.DONE);
+```
+
+**Returning mock/static data from service methods.** When building a domain service that calls core services via SDK, never return static data or hardcoded values because the core service endpoint "doesn't exist yet". Either create the endpoint in the core service, or define a port interface with a stub adapter that throws `NotImplementedException`. Empty or mock returns in production code hide integration gaps and create silent failures.

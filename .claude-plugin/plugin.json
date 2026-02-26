@@ -1,7 +1,7 @@
 {
   "name": "fireflyframework-claude-skills",
   "description": "Claude Code skills for accelerating development with Firefly Framework — reactive microservices, CQRS, Sagas, EDA, and more",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "author": {
     "name": "Firefly Software Solutions Inc",
     "email": "oss@fireflysoftware.io"

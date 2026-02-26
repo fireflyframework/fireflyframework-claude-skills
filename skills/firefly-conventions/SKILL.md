@@ -452,6 +452,278 @@ Generated DTO classes land in `org.fireflyframework.{artifactId}.interfaces.dto`
 | `@EnableOpenApiGen` | `o.f.web.openapi` | Meta-annotation for OpenAPI spec generation in test sources |
 | `@DisableIdempotency` | `o.f.web.idempotency.annotation` | Disables idempotency filter for specific endpoints |
 
+## 11. Web-Layer Exception Availability
+
+`NotImplementedException` and other exceptions from `org.fireflyframework.web.error.exceptions` belong to the `fireflyframework-web` module. If a `-core` module needs to throw these exceptions, it must explicitly declare the dependency:
+
+```xml
+<!-- In {service}-core/pom.xml -->
+<dependency>
+    <groupId>org.fireflyframework</groupId>
+    <artifactId>fireflyframework-web</artifactId>
+</dependency>
+```
+
+**Common mistake:** Using `NotImplementedException` in a `-core` module without adding `fireflyframework-web` as a dependency. The `-core` module typically depends on `fireflyframework-starter-core` or `fireflyframework-starter-domain`, neither of which transitively includes `fireflyframework-web`.
+
+## 12. Orchestration Enums
+
+The `StepStatus` enum in `org.fireflyframework.orchestration.core.model` has these values:
+
+```
+PENDING, RUNNING, DONE, FAILED, SKIPPED, TIMED_OUT, RETRYING
+```
+
+**Common mistake:** Using `StepStatus.COMPLETED` -- this value does not exist. The correct value is `StepStatus.DONE`.
+
+## 13. Controller Conventions
+
+### @Valid on Request Bodies
+
+All `@RequestBody` parameters in controllers MUST have the `@Valid` annotation for Jakarta Bean Validation:
+
+```java
+// CORRECT
+@PostMapping
+public Mono<ResponseEntity<AccountDTO>> create(
+        @Valid @RequestBody AccountDTO dto) { ... }
+
+// WRONG -- missing @Valid
+@PostMapping
+public Mono<ResponseEntity<AccountDTO>> create(
+        @RequestBody AccountDTO dto) { ... }
+```
+
+### scanBasePackages
+
+When using `@SpringBootApplication(scanBasePackages = {...})`, the framework web package is `org.fireflyframework.web`, not `com.firefly.common.web`:
+
+```java
+// CORRECT
+@SpringBootApplication(scanBasePackages = {
+    "com.firefly.core.customer",
+    "org.fireflyframework.web"
+})
+
+// WRONG
+@SpringBootApplication(scanBasePackages = {
+    "com.firefly.core.customer",
+    "com.firefly.common.web"  // Package does not exist
+})
+```
+
+### springdoc.packages-to-scan
+
+The controllers sub-package is plural (`controllers`, not `controller`):
+
+```yaml
+# CORRECT
+springdoc:
+  packages-to-scan: com.firefly.core.customer.web.controllers
+
+# WRONG
+springdoc:
+  packages-to-scan: com.firefly.core.customer.web.controller
+```
+
+## 14. Configuration Properties
+
+### @ConfigurationProperties without @Configuration
+
+When the application class has `@ConfigurationPropertiesScan`, properties classes only need `@ConfigurationProperties` -- do NOT add `@Configuration`:
+
+```java
+// CORRECT -- discovered by @ConfigurationPropertiesScan
+@ConfigurationProperties(prefix = "api-configuration.customer-mgmt")
+public class CustomerMgmtProperties {
+    private String basePath;
+    // getters and setters
+}
+
+// WRONG -- @Configuration is unnecessary and causes bean conflicts
+@Configuration
+@ConfigurationProperties(prefix = "api-configuration.customer-mgmt")
+public class CustomerMgmtProperties { ... }
+```
+
+### Actuator Health Details
+
+Health endpoint details should be `when-authorized` (not `always`) in all environments:
+
+```yaml
+management:
+  endpoint:
+    health:
+      show-details: when-authorized  # NOT "always"
+```
+
+### Profile Names
+
+Standard profiles are `dev`, `pre`, and `pro`. Never use `testing`, `staging`, or `local`:
+
+```yaml
+# CORRECT
+spring.config.activate.on-profile: pre
+
+# WRONG
+spring.config.activate.on-profile: testing
+```
+
+## 15. PII Logging Rules
+
+Never log personally identifiable information (PII). Use resource identifiers instead:
+
+```java
+// WRONG -- logs PII
+log.info("Processing customer: name={}, email={}", customer.getName(), customer.getEmail());
+log.info("Payment for IBAN: {} amount: {}", iban, amount);
+
+// CORRECT -- logs only resource identifiers
+log.info("Processing customer: partyId={}", customer.getPartyId());
+log.info("Payment initiated: paymentId={} consentId={}", paymentId, consentId);
+```
+
+PII includes: names, emails, phone numbers, addresses, IBANs, account numbers, SSNs, tax IDs, passport numbers, API keys, passwords, and card data.
+
+## 16. Javadoc Documentation Requirements
+
+All generated code must include Javadoc documentation:
+
+### Classes and Interfaces
+
+Every public class and interface requires a Javadoc comment explaining its purpose:
+
+```java
+/**
+ * Service responsible for managing KYC verification lifecycle.
+ * Orchestrates identity verification through external providers,
+ * manages document collection, and records compliance decisions.
+ */
+@Service
+@RequiredArgsConstructor
+@Slf4j
+public class KycServiceImpl implements KycService { ... }
+```
+
+### Public Methods
+
+Every public method requires Javadoc with `@param`, `@return`, and `@throws` tags:
+
+```java
+/**
+ * Initiates identity verification for the given case through the configured provider.
+ *
+ * @param caseId the compliance case identifier
+ * @return a {@link SagaResult} indicating verification outcome
+ * @throws ResourceNotFoundException if the case does not exist
+ */
+public Mono<SagaResult> verify(UUID caseId) { ... }
+```
+
+### When to Skip
+
+- Private methods (unless complex logic warrants explanation)
+- Simple getters/setters (Lombok-generated)
+- Test methods (the test name should be self-explanatory)
+
+## 17. README.md Documentation Standards
+
+Every microservice MUST have a `README.md` at the project root with the following structure:
+
+```markdown
+# {Service Name}
+
+{One-paragraph description of the service's purpose and role in the platform.}
+
+## Table of Contents
+
+- [Architecture](#architecture)
+- [Module Structure](#module-structure)
+- [API Reference](#api-reference)
+- [Configuration](#configuration)
+- [Getting Started](#getting-started)
+- [Dependencies](#dependencies)
+
+## Architecture
+
+{Describe the service tier (Core/Domain/App), what business capability it provides,
+and how it fits into the broader platform. Include a dependency diagram if it
+orchestrates multiple services.}
+
+## Module Structure
+
+| Module | Purpose |
+|--------|---------|
+| `-interfaces` | DTOs, enums, API contracts |
+| `-models` | R2DBC entities, repositories, Flyway migrations (core tier only) |
+| `-infra` | SDK client factories, configuration properties (domain tier only) |
+| `-core` | Service interfaces, implementations, mappers |
+| `-web` | REST controllers, Spring Boot application, configuration |
+| `-sdk` | Auto-generated OpenAPI client for consumers |
+
+## API Reference
+
+{List the main endpoints with HTTP method, path, and brief description.
+Reference the Swagger UI URL for full documentation.}
+
+## Configuration
+
+{Document all required environment variables and configuration properties.
+Include a table with variable name, description, and default value.}
+
+## Getting Started
+
+{Step-by-step instructions to build and run the service locally.
+Include prerequisites, database setup, and Maven commands.}
+
+## Dependencies
+
+{List upstream services this service calls (via SDK) and downstream services
+that consume this service's SDK.}
+```
+
+## 18. Cross-Layer Reflexive Property
+
+When generating code for an upper-layer service (domain or app tier) that calls a lower-layer service (core tier), if the lower-layer method does not exist, you MUST create it. Never leave upper-layer methods returning static/mock data or empty results.
+
+### Rule
+
+If a domain service method calls `coreServiceApi.someMethod(...)` and that method does not exist in the core service's controller/service, then:
+
+1. Create the endpoint in the core service's `-web` controller
+2. Create the service interface method in the core service's `-core` module
+3. Implement the service method with proper business logic
+4. Rebuild the core service SDK so the domain service can call it
+
+### Anti-Pattern
+
+```java
+// WRONG -- returning static data because the lower layer doesn't have the method
+@Override
+public Mono<SagaResult> verify(UUID caseId) {
+    // TODO: call core service when endpoint is available
+    return Mono.just(SagaResultHelper.success("verify"));
+}
+```
+
+```java
+// CORRECT -- calls the actual lower-layer service
+@Override
+public Mono<SagaResult> verify(UUID caseId) {
+    return kycProviderPort.verifyIdentity(partyId, request)
+        .flatMap(result -> kycVerificationApi.updateKycVerification(...))
+        .map(updated -> SagaResultHelper.success("verify", "verification", updated.getId()));
+}
+```
+
+### When the Lower Layer Doesn't Exist Yet
+
+If you are building the upper layer first and the lower-layer endpoint does not exist:
+1. Define a port interface in the upper layer's `-core` module
+2. Create a stub adapter in the `-infra` module that throws `NotImplementedException`
+3. Document the dependency clearly with a `// TODO: implement when {service} is available` comment
+4. **Never** silently return empty or mock data from production service methods
+
 ## Quick Reference Table
 
 | Topic | Do | Don't |
@@ -465,7 +737,7 @@ Generated DTO classes land in `org.fireflyframework.{artifactId}.interfaces.dto`
 | Mappers | `@Mapper(componentModel = SPRING)` as abstract class | Manual mapping code, interface mappers with injections |
 | Config classes | `@Configuration` + `*AutoConfiguration` suffix | `@Component` for config |
 | Properties | `@ConfigurationProperties(prefix = "firefly.xxx")` | `@Value` for complex config |
-| Profiles | `dev`, `pre`, `pro` | `local`, `staging`, `production` (unless also needed for compatibility) |
+| Profiles | `dev`, `pre`, `pro` | `local`, `staging`, `testing`, `production` |
 | Versioning | CalVer `YY.MM.patch` (e.g., `26.02.06`) | SemVer |
 | Parent POM | Inherit from `fireflyframework-parent` | Define your own plugin/dependency management |
 | Dependency versions | Import `fireflyframework-bom` | Hardcode framework module versions |
@@ -473,7 +745,15 @@ Generated DTO classes land in `org.fireflyframework.{artifactId}.interfaces.dto`
 | Web framework | Spring WebFlux | Spring MVC |
 | CQRS handlers | Extend `CommandHandler<C,R>` / `QueryHandler<Q,R>` | Implement interfaces directly |
 | Handler registration | `@CommandHandlerComponent` / `@QueryHandlerComponent` | Manual `CommandBus.register()` |
-| Logging | `@Slf4j` (Lombok) | `Logger.getLogger()` |
+| Logging | `@Slf4j` (Lombok) with resource IDs only | `Logger.getLogger()`, logging PII (names, emails, IBANs) |
 | Cache keys | Prefix with `firefly:cache:{name}:` | Unprefixed keys |
 | Error responses | RFC 7807 `ProblemDetail` / `ErrorResponse` | Custom error JSON shapes |
 | Security | `@Secure(roles = {...})` | Inline `SecurityContextHolder` checks |
+| Step status | `StepStatus.DONE` | `StepStatus.COMPLETED` (does not exist) |
+| Controller validation | `@Valid @RequestBody` on all POST/PUT bodies | `@RequestBody` without `@Valid` |
+| scanBasePackages | `org.fireflyframework.web` | `com.firefly.common.web` |
+| Controller package | `web.controllers` (plural) | `web.controller` (singular) |
+| Health details | `show-details: when-authorized` | `show-details: always` |
+| Cross-layer methods | Implement full call chain to lower layers | Return static/mock data from service methods |
+| Javadoc | Document all public classes and methods | Skip documentation entirely |
+| README.md | Include in every microservice root | Leave services undocumented |

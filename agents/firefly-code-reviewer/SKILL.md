@@ -282,7 +282,81 @@ Base package is `org.fireflyframework.{module}` for framework modules. Consumer 
 
 ---
 
-## 12. Data Access
+## 12. SDK and OpenAPI Integration
+
+### BLOCKER violations
+
+- [ ] Using `StepStatus.COMPLETED` instead of `StepStatus.DONE`. The `COMPLETED` value does not exist in the `StepStatus` enum.
+- [ ] Using `@SpringBootApplication` instead of `@EnableOpenApiGen` for the OpenAPI generation application class.
+- [ ] SDK model DTO using `setId()` or `set{Entity}Id()` -- generated SDK DTOs have **read-only** ID fields that can only be set via constructors. Example: `new KycVerificationDTO(null, null, uuid)`.
+- [ ] `-interfaces` module depending on `-core` (inverted dependency). Correct direction: `-core` depends on `-interfaces`.
+- [ ] `-web` module missing dependency on `-core` when controllers import service interfaces or commands from `-core`.
+
+### WARNING violations
+
+- [ ] Using `-Dmaven.test.skip=true` instead of `-DskipTests` when building `-web` module. The former skips test compilation, which prevents `OpenApiGenApplication` (in `src/test/java`) from being compiled.
+- [ ] `NotImplementedException` from `fireflyframework-web` used in `-core` module without declaring `fireflyframework-web` dependency.
+- [ ] SDK getter name mismatch -- using `getDocumentId()` when the actual generated getter is `getVerificationDocumentId()`. Always verify against the generated SDK source.
+- [ ] SDK inline enum not used correctly -- enum types like `NotificationTypeEnum` are inner classes of the DTO (e.g., `SendNotificationCommand.NotificationTypeEnum.WELCOME`), not standalone enums.
+- [ ] Mock parameter count does not match SDK API method signature. Generated SDK methods may have many parameters (especially for list/filter endpoints). Always verify the exact signature.
+- [ ] `@ComponentScan` in `OpenApiGenApplication` scanning beyond the controllers package. Must point only at `*.web.controllers`.
+- [ ] `scanBasePackages` using `com.firefly.common.web` instead of `org.fireflyframework.web`.
+- [ ] `springdoc.packages-to-scan` using singular `controller` instead of plural `controllers`.
+
+### INFO suggestions
+
+- [ ] Service methods returning static/mock data instead of calling lower-layer services via SDK. This indicates an incomplete integration -- create the missing endpoint or define a port interface with a stub adapter.
+- [ ] Consider adding Javadoc to all public classes and methods. At minimum, document service interfaces and their methods.
+- [ ] Verify every microservice has a `README.md` documenting architecture, API reference, configuration, and getting started steps.
+
+---
+
+## 13. PII and Logging
+
+### BLOCKER violations
+
+- [ ] Logging PII fields: customer names, email addresses, phone numbers, IBANs, SSNs, tax IDs, passport numbers.
+- [ ] Logging raw card data (PAN, CVV) or API keys.
+- [ ] Using `toString()` on DTOs containing sensitive fields in log statements.
+
+### WARNING violations
+
+- [ ] Log statements not using resource identifiers (`partyId`, `paymentId`, `caseId`) in place of human-readable PII.
+- [ ] Missing `PiiMaskingService` integration when error responses may contain user-submitted data.
+
+---
+
+## 14. Documentation
+
+### WARNING violations
+
+- [ ] Missing Javadoc on public service interfaces and their methods.
+- [ ] Missing `README.md` in the microservice root directory.
+
+### INFO suggestions
+
+- [ ] Javadoc on all public classes should describe purpose, role in the architecture, and key collaborators.
+- [ ] Javadoc on public methods should include `@param`, `@return`, and `@throws` tags.
+- [ ] `README.md` should include: architecture overview, module structure table, API reference, configuration variables, getting started guide, and dependency diagram.
+
+---
+
+## 15. Cross-Layer Integration
+
+### BLOCKER violations
+
+- [ ] Upper-layer service method (domain/app) returning hardcoded/static data instead of calling lower-layer service. This creates silent integration failures.
+- [ ] `@ConfigurationProperties` class also annotated with `@Configuration` when `@ConfigurationPropertiesScan` is active on the application class. Remove `@Configuration`.
+
+### WARNING violations
+
+- [ ] `health.show-details` set to `always` instead of `when-authorized`.
+- [ ] Spring profile names using non-standard values (`testing`, `staging`, `local`) instead of `dev`, `pre`, `pro`.
+- [ ] Missing `@Valid` annotation on `@RequestBody` controller parameters.
+
+---
+
+## 16. Data Access
 
 ### BLOCKER violations
 
@@ -303,6 +377,8 @@ Base package is `org.fireflyframework.{module}` for framework modules. Consumer 
 ---
 
 ## Review Report Format
+
+**Note:** When reporting section numbers in review output, the sections are numbered 1-16.
 
 When reviewing code, produce a structured report:
 

@@ -9,7 +9,7 @@
     {
       "name": "fireflyframework-claude-skills",
       "description": "Claude Code skills for accelerating development with Firefly Framework",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "source": "./",
       "author": {
         "name": "Firefly Software Solutions Inc",
