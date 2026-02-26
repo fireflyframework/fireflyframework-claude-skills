@@ -12,7 +12,7 @@ Generate a complete Firefly Framework microservice project. Refer to the `create
 | Parameter | Required | Description | Example |
 |-----------|----------|-------------|---------|
 | `name` | Yes | Service name in kebab-case (becomes the artifactId) | `core-common-customer-mgmt` |
-| `tier` | Yes | One of: `core`, `domain`, `application`, `data`, `library` | `core` |
+| `tier` | Yes | One of: `core`, `domain`, `experience`, `application`, `data`, `library` | `core` |
 
 If either parameter is missing, prompt the user before generating anything.
 
@@ -72,9 +72,13 @@ Generate this directory tree:
 
 Replace `{name}-models` with `{name}-infra`. The infra module contains client factories and downstream properties instead of entities and repositories. The core module adds `handlers/` and `workflows/` packages. No Flyway migration. No `@EnableR2dbcRepositories`.
 
+### Experience Tier (5 modules)
+
+Experience-tier services (`exp-*`) use the same 5-module layout as domain tier (`interfaces`, `infra`, `core`, `sdk`, `web`). The `-infra` module contains client factories for **domain** service SDKs (never core SDKs directly). Uses `fireflyframework-starter-application`. No database, no Flyway, no `@EnableR2dbcRepositories`.
+
 ### Application / Data / Library Tier
 
-Generate a single-module project (no sub-modules). Application tier includes Spring Security. Library tier has no Spring Boot main class.
+Generate a single-module project (no sub-modules). Application tier (`app-*`) is for infrastructure edge services (auth, gateway). Library tier has no Spring Boot main class.
 
 ## Root pom.xml Template
 

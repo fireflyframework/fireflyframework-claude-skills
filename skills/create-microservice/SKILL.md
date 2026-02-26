@@ -12,7 +12,7 @@ Ask the user for the following before generating any files:
 | Question | Example | Notes |
 |----------|---------|-------|
 | Service name (kebab-case artifactId) | `core-common-customer-mgmt` | Becomes the root artifactId and directory name |
-| Tier | `core`, `domain`, `application`, `data` | Determines starter dependency and module layout |
+| Tier | `core`, `domain`, `experience`, `application`, `data` | Determines starter dependency and module layout |
 | Group ID | `org.fireflyframework` | Default: `org.fireflyframework` |
 | Base Java package | `org.fireflyframework.core.common.customer.mgmt` | Derived from groupId + sanitized artifactId |
 | Initial entity name (PascalCase) | `Customer` | Used to generate sample DTO, entity, service, controller |
@@ -110,9 +110,41 @@ The domain tier replaces `models` with `infra` and adds CQRS/Saga packages:
     src/main/resources/application.yaml
 ```
 
+### Experience Tier (5 modules: interfaces, infra, core, sdk, web)
+
+Experience-tier services (`exp-*`) use the same 5-module structure as domain services: `interfaces`, `infra`, `core`, `sdk`, `web`. The `-infra` module contains client factories for **domain** service SDKs (never core SDKs directly). The `-core` module contains journey orchestration and response shaping. Uses `fireflyframework-starter-application`.
+
+```
+{artifactId}/
+  pom.xml
+  {artifactId}-interfaces/
+    src/main/java/{package}/interfaces/
+      dtos/                    # Journey-specific request/response DTOs
+  {artifactId}-infra/
+    src/main/java/{package}/infra/
+      clients/
+        ClientFactory.java     # Domain SDK client factories
+        DownstreamProperties.java
+  {artifactId}-core/
+    src/main/java/{package}/core/
+      services/
+        {Journey}Service.java
+        impl/
+          {Journey}ServiceImpl.java
+      mappers/
+  {artifactId}-sdk/
+    src/main/resources/api-spec/openapi.yml
+  {artifactId}-web/
+    src/main/java/{package}/web/
+      Application.java
+      controller/
+        {Journey}Controller.java
+    src/main/resources/application.yaml
+```
+
 ### Application Tier (single module)
 
-Application-tier services are single-module projects (no sub-modules).
+Application-tier services (`app-*`) are single-module projects for infrastructure concerns (authentication, gateway, config).
 
 ### Library (single module, no Spring Boot app)
 
@@ -947,11 +979,11 @@ components:
 
 ## 9. Tier-Specific Configuration
 
-| Aspect | Core | Domain | Application | Data |
-|--------|------|--------|-------------|------|
-| **Starter** | `fireflyframework-starter-core` | `fireflyframework-starter-domain` | `fireflyframework-starter-application` | `fireflyframework-starter-data` |
-| **Multi-module** | Yes (5 modules) | Yes (5 modules) | No (single module) | No (single module) |
-| **Modules** | interfaces, models, core, sdk, web | interfaces, infra, core, sdk, web | single JAR | single JAR |
+| Aspect | Core | Domain | Experience | Application | Data |
+|--------|------|--------|------------|-------------|------|
+| **Starter** | `fireflyframework-starter-core` | `fireflyframework-starter-domain` | `fireflyframework-starter-application` | `fireflyframework-starter-application` | `fireflyframework-starter-data` |
+| **Multi-module** | Yes (5 modules) | Yes (5 modules) | Yes (5 modules) | No (single module) | No (single module) |
+| **Modules** | interfaces, models, core, sdk, web | interfaces, infra, core, sdk, web | interfaces, infra, core, sdk, web | single JAR | single JAR |
 | **Database (R2DBC)** | Yes -- owns its schema | No -- calls core services via SDK | No | No |
 | **Flyway migrations** | Yes (`models` module) | No | No | No |
 | **CQRS** | Optional (via starter) | Yes -- `fireflyframework-cqrs` | Optional | Yes -- `fireflyframework-cqrs` |
@@ -971,7 +1003,8 @@ components:
 
 - **Core**: The service owns a database table and provides CRUD operations. Examples: `core-common-customer-mgmt`, `core-banking-ledger`.
 - **Domain**: The service orchestrates multiple core services, implements business workflows (sagas), and applies domain rules. No direct database access. Examples: `domain-customer-people`, `domain-lending-loan-origination`.
-- **Application**: The service acts as a gateway, manages security context, or provides a unified API facade. Examples: `app-authenticator`, `app-backoffice`.
+- **Experience**: The service is a BFF organized by user journey. Consumes domain SDKs only (never core directly). Aggregates and shapes responses for frontends. Examples: `exp-onboarding`, `exp-lending`, `exp-payments`.
+- **Application**: The service provides infrastructure edge concerns: authentication, gateway, configuration. Not for user-journey BFFs. Examples: `app-authenticator`, `app-gateway`, `app-backoffice`.
 - **Data**: The service processes data, runs reports, or performs ETL. Examples: `core-data-*` services.
 
 ## 10. Post-Scaffolding Verification

@@ -17,11 +17,13 @@ Every Firefly service starts with choosing the right starter tier. This is the f
 
 ```
 Does the service expose APIs to end users or other frontends?
-  YES --> Does it aggregate/orchestrate calls to domain services?
-    YES --> APPLICATION tier (fireflyframework-starter-application)
-    NO  --> Does it own domain state and business rules?
-      YES --> DOMAIN tier (fireflyframework-starter-domain)
-      NO  --> CORE tier (fireflyframework-starter-core)
+  YES --> Is it a BFF organized by user journey (onboarding, lending, payments)?
+    YES --> EXPERIENCE tier (fireflyframework-starter-application, prefix: exp-*)
+    NO  --> Is it infrastructure (auth, gateway, config)?
+      YES --> APPLICATION tier (fireflyframework-starter-application, prefix: app-*)
+      NO  --> Does it aggregate/orchestrate calls to core services?
+        YES --> DOMAIN tier (fireflyframework-starter-domain)
+        NO  --> CORE tier (fireflyframework-starter-core)
   NO  --> Does it process, transform, or enrich data?
     YES --> DATA tier (fireflyframework-starter-data)
     NO  --> Does it own domain state and business rules?
@@ -35,14 +37,16 @@ Does the service expose APIs to end users or other frontends?
 |------|---------|-------------|----------|
 | **Core** | `fireflyframework-starter-core` | Infrastructure services, gateways, utilities that do not own domain logic. Shared foundation for all tiers. | Actuator, WebClient, logging, tracing, service registry, cloud config |
 | **Domain** | `fireflyframework-starter-domain` | Microservices that own business rules, entities, and state. The primary tier for DDD services. | Core + CQRS (command/query bus), SAGA orchestration, service client, EDA, validators |
-| **Application** | `fireflyframework-starter-application` | API gateways, BFFs (Backend-for-Frontend), portal services that aggregate domain services and handle user-facing concerns. | Core + security (`@Secure`), `@FireflyApplication` metadata, session management, config/context resolvers, abstract controllers |
+| **Experience** | `fireflyframework-starter-application` | BFF services organized by user journey (`exp-*`). Aggregate domain SDKs into journey-specific APIs for frontends. Do NOT access core services directly. | Core + security (`@Secure`), `@FireflyApplication` metadata, session management, config/context resolvers, abstract controllers |
+| **Application** | `fireflyframework-starter-application` | Infrastructure edge services: authentication (`app-authenticator`), gateways (`app-gateway`), backoffice (`app-backoffice`). Not for user-journey BFFs — use Experience tier instead. | Core + security (`@Secure`), `@FireflyApplication` metadata, session management, config/context resolvers, abstract controllers |
 | **Data** | `fireflyframework-starter-data` | Data processing services: ETL, enrichment, quality checks, lineage tracking. | Core + enrichment, data quality, job orchestration, transformation pipelines |
 
 ### Common mistakes
 
-- CQRS handlers in Application tier -- commands/queries belong in Domain tier
-- Domain tier for a simple API proxy -- use Core or Application if no owned state
+- CQRS handlers in Application/Experience tier -- commands/queries belong in Domain tier
+- Domain tier for a simple API proxy -- use Core or Experience/Application if no owned state
 - Core tier for a service needing CQRS or Saga -- these require Domain tier
+- Using Application tier for a user-journey BFF -- use Experience tier (`exp-*`) instead; Application is for infrastructure (auth, gateway, config)
 
 ---
 
@@ -368,7 +372,7 @@ operation
 
 When designing a new service, walk through this checklist:
 
-1. **Tier**: Which starter tier? (Core / Domain / Application / Data)
+1. **Tier**: Which starter tier? (Core / Domain / Experience / Application / Data)
 2. **Patterns**: Which patterns? (CQRS / Saga / Event Sourcing / Simple)
 3. **Data**: R2DBC or Event Store? Which database? Cache strategy?
 4. **Integration**: How does it communicate with other services? (Service client / EDA / Both)

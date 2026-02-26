@@ -322,16 +322,19 @@ public class MyCustomExceptionConverter implements ExceptionConverter<MyLibraryE
 
 ## 8. Tier Model
 
-The framework defines 4 tiers, each with a dedicated starter:
+The framework defines 5 tiers, each with a dedicated starter:
 
 | Tier | Starter | Base Package | Purpose |
 |---|---|---|---|
 | Core | `fireflyframework-starter-core` | `org.fireflyframework.core` | Actuator, WebClient, logging, tracing, service registry, cloud config. Infrastructure layer shared by all tiers. |
 | Domain | `fireflyframework-starter-domain` | `org.fireflyframework.domain` | DDD + reactive: CQRS (command/query bus), SAGA orchestration, service client, EDA, validators. For domain microservices. |
-| Application | `fireflyframework-starter-application` | `org.fireflyframework.common.application` | API gateway/BFF layer: security (`@Secure`), `@FireflyApplication` metadata, session management, config/context resolvers, abstract controllers. |
+| Experience | `fireflyframework-starter-application` | `org.fireflyframework.common.application` | BFF per user journey (`exp-*`): aggregates domain SDKs into journey-specific APIs for frontends. Security, session management, config/context resolvers. Does NOT access core services directly. |
+| Application | `fireflyframework-starter-application` | `org.fireflyframework.common.application` | Infrastructure edge services (`app-*`): authentication, gateways, backoffice. Not for user-journey BFFs — use Experience tier instead. |
 | Data | `fireflyframework-starter-data` | `org.fireflyframework.data` | Data enrichment, ETL job orchestration, data quality, lineage tracking, transformation pipelines. For data microservices. |
 
-**Dependency flow**: Core is the foundation. Domain, Application, and Data each include Core transitively. Domain includes CQRS, EDA, orchestration, client. Application includes security, session, metadata. Data includes enrichment, quality, jobs.
+**Dependency flow**: Core is the foundation. Domain, Experience, Application, and Data each include Core transitively. Domain includes CQRS, EDA, orchestration, client. Experience and Application include security, session, metadata. Data includes enrichment, quality, jobs. Experience services consume only domain SDKs; Application services may consume domain SDKs.
+
+**Dependency direction**: `channel (web/mobile) → exp-* → domain-* → core-*` and `app-* → domain-* → core-*`. Never invert.
 
 ### Starter dependencies (from BOM)
 
@@ -342,7 +345,7 @@ The framework defines 4 tiers, each with a dedicated starter:
     <artifactId>fireflyframework-starter-domain</artifactId>
 </dependency>
 
-<!-- Application / BFF microservice -->
+<!-- Experience (exp-*) or Application (app-*) microservice -->
 <dependency>
     <groupId>org.fireflyframework</groupId>
     <artifactId>fireflyframework-starter-application</artifactId>
@@ -408,7 +411,7 @@ management:
 | `firefly.web-client.*` | fireflyframework-starter-core |
 | `firefly.service-registry.*` | fireflyframework-starter-core |
 | `firefly.cloud-config.*` | fireflyframework-starter-core |
-| `firefly.application.*` | fireflyframework-starter-application |
+| `firefly.application.*` | fireflyframework-starter-application (used by both `exp-*` and `app-*` services) |
 | `firefly.data.enrichment.*` | fireflyframework-starter-data |
 | `firefly.data.jobs.*` | fireflyframework-starter-data |
 
