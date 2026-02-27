@@ -1176,6 +1176,117 @@ If you are building the upper layer first and the lower-layer endpoint does not 
 3. Document the dependency clearly with a `// TODO: implement when {service} is available` comment
 4. **Never** silently return empty or mock data from production service methods
 
+## 21. Reactive Error Signaling
+
+### Never throw inside Reactor `map()` operators
+
+Throwing exceptions inside `.map()`, `.doOnNext()`, or other non-error-aware operators bypasses Reactor's error handling pipeline. The exception propagates as an uncontrolled signal and may crash the scheduler thread instead of flowing through `onErrorResume`/`onErrorMap` handlers downstream.
+
+**Always use `.flatMap()` with `Mono.error()` when the transformation can fail:**
+
+```java
+// WRONG -- throw inside map() bypasses Reactor error handling
+return smsApi.sendSMS(request, partyId)
+    .map(response -> {
+        if (response.getMessageId() != null) {
+            return UUID.fromString(response.getMessageId());
+        }
+        throw new IllegalStateException("No message ID returned");
+    });
+
+// CORRECT -- flatMap() + Mono.error() keeps the error in the reactive pipeline
+return smsApi.sendSMS(request, partyId)
+    .flatMap(response -> {
+        if (response.getMessageId() != null) {
+            return Mono.just(UUID.fromString(response.getMessageId()));
+        }
+        return Mono.error(new IllegalStateException("No message ID returned"));
+    });
+```
+
+**For helper methods called inside `.map()`**: If a private method can fail, make it return `Mono<T>` and switch the caller from `.map()` to `.flatMap()`:
+
+```java
+// WRONG -- extractUuid throws, used in .map()
+return api.register(cmd)
+    .map(response -> extractUuid(response, "partyId"));
+
+private UUID extractUuid(Object response, String field) {
+    if (response instanceof Map<?, ?> map && map.get(field) instanceof String s) {
+        return UUID.fromString(s);
+    }
+    throw new BusinessException(HttpStatus.INTERNAL_SERVER_ERROR, "MISSING_FIELD",
+            "Expected field '" + field + "' not found");
+}
+
+// CORRECT -- extractUuid returns Mono, used in .flatMap()
+return api.register(cmd)
+    .flatMap(response -> extractUuid(response, "partyId"));
+
+private Mono<UUID> extractUuid(Object response, String field) {
+    if (response instanceof Map<?, ?> map && map.get(field) instanceof String s) {
+        return Mono.just(UUID.fromString(s));
+    }
+    return Mono.error(new BusinessException(HttpStatus.INTERNAL_SERVER_ERROR, "MISSING_FIELD",
+            "Expected field '" + field + "' not found"));
+}
+```
+
+### Never throw directly in reactive controller methods
+
+Controller methods that return `Mono<T>` or `Flux<T>` must signal errors through the reactive pipeline, not via direct `throw` statements. A direct `throw` works at runtime (Spring's `@ExceptionHandler` catches it), but it breaks the reactive contract and causes issues with reactive filters, `ServerWebExchange` lifecycle, and tracing:
+
+```java
+// WRONG -- direct throw in a method returning Mono
+@GetMapping("/{id}")
+public Mono<ResponseEntity<Object>> getById(@PathVariable UUID id) {
+    throw new NotImplementedException("NOT_IMPL", "Endpoint not yet implemented");
+}
+
+// CORRECT -- error flows through the reactive pipeline
+@GetMapping("/{id}")
+public Mono<ResponseEntity<Object>> getById(@PathVariable UUID id) {
+    return Mono.error(new NotImplementedException("NOT_IMPL", "Endpoint not yet implemented"));
+}
+```
+
+### Safe casts from `ExecutionContext.getVariable()`
+
+`ExecutionContext.getVariable()` returns `Object` and may be `null`. Direct casts `(String) ctx.getVariable(key)` throw `ClassCastException` or produce `null` without warning. Use `instanceof` pattern matching for safe extraction:
+
+```java
+// WRONG -- unsafe cast, may throw ClassCastException or silently pass null
+String channel = (String) ctx.getVariable("channel");
+if ("EMAIL".equals(channel)) { ... }
+
+// CORRECT -- instanceof pattern matching guards against both null and wrong type
+Object channelValue = ctx.getVariable("channel");
+String channel = channelValue instanceof String s ? s : null;
+if ("EMAIL".equals(channel)) { ... }
+```
+
+### Guard `UUID.fromString()` in reactive contexts
+
+`UUID.fromString()` throws `IllegalArgumentException` on malformed input. Inside reactive chains, this unchecked exception breaks the pipeline. Wrap it in a try-catch or validate first:
+
+```java
+// WRONG -- UUID.fromString() can throw inside flatMap
+return response.flatMap(r -> {
+    UUID id = UUID.fromString(r.getMessageId()); // throws on invalid input
+    return Mono.just(id);
+});
+
+// CORRECT -- catch potential parsing failure
+return response.flatMap(r -> {
+    try {
+        return Mono.just(UUID.fromString(r.getMessageId()));
+    } catch (IllegalArgumentException e) {
+        return Mono.error(new BusinessException(HttpStatus.INTERNAL_SERVER_ERROR,
+            "INVALID_UUID", "Service returned invalid UUID: " + r.getMessageId()));
+    }
+});
+```
+
 ## Quick Reference Table
 
 | Topic | Do | Don't |
@@ -1215,6 +1326,9 @@ If you are building the upper layer first and the lower-layer endpoint does not 
 | Comments | Only for non-obvious business rules or workarounds | Obvious comments that restate the code |
 | `.subscribe()` | Compose into the reactive chain with `flatMap`/`then` | Loose `.subscribe()` inside handlers/services |
 | Reactive chains | Decompose into named methods after ~5 operators | Monolithic nested `flatMap` chains |
+| Error signaling | `.flatMap()` + `Mono.error()` for conditional errors | `throw` inside `.map()`, `.doOnNext()`, or reactive controller methods |
+| Context variables | `instanceof` pattern matching: `value instanceof String s ? s : null` | Direct cast `(String) ctx.getVariable(key)` |
+| UUID parsing | Try-catch around `UUID.fromString()` in reactive chains | Bare `UUID.fromString()` inside `map`/`flatMap` |
 | Cache keys | Prefix with `firefly:cache:{name}:` | Unprefixed keys |
 | Error responses | RFC 7807 `ProblemDetail` / `ErrorResponse` | Custom error JSON shapes |
 | Security | `@Secure(roles = {...})` | Inline `SecurityContextHolder` checks |
