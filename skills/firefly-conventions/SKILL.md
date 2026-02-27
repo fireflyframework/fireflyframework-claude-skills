@@ -757,6 +757,270 @@ if (score > 800) {
 }
 ```
 
+## 16. Clean Code
+
+### Method and class design
+
+**Method length** -- Methods exceeding ~20-25 lines are candidates for extraction. Each method should do one thing and its name should describe that thing. If you need a comment to explain what a block of code does, extract it into a method whose name IS that explanation.
+
+**Parameter count** -- Methods with more than 3 parameters should use a request or command object. This applies especially to constructors not managed by Lombok:
+
+```java
+// WRONG -- too many parameters
+public Mono<LoanResult> evaluate(UUID customerId, BigDecimal amount,
+        String currency, int termMonths, String productCode, String channel) { ... }
+
+// CORRECT -- grouped into a command object
+public Mono<LoanResult> evaluate(LoanEvaluationCommand command) { ... }
+```
+
+**Nesting depth** -- No more than 2 levels of `if`/`for`/`while` nesting (the "arrow anti-pattern"). Use guard clauses and early returns to flatten logic:
+
+```java
+// WRONG -- deep nesting
+public Mono<Void> process(Request request) {
+    if (request != null) {
+        if (request.isValid()) {
+            if (request.hasPermission()) {
+                return doWork(request);
+            }
+        }
+    }
+    return Mono.empty();
+}
+
+// CORRECT -- guard clauses with early return
+public Mono<Void> process(Request request) {
+    if (request == null || !request.isValid()) {
+        return Mono.empty();
+    }
+    if (!request.hasPermission()) {
+        return Mono.error(new ForbiddenException("Insufficient permissions"));
+    }
+    return doWork(request);
+}
+```
+
+### Immutability and null safety
+
+**Final fields** -- Fields that do not change after construction must be `final`. This includes service dependencies, configuration values, and constants. Lombok's `@RequiredArgsConstructor` generates a constructor for all `final` fields.
+
+**Immutable collections** -- Collections exposed via getters or returned from methods must be immutable. Use `List.of()`, `Map.of()`, `Set.of()`, or `Collections.unmodifiableList()`:
+
+```java
+// WRONG -- mutable list leaks internal state
+public List<String> getSupportedChannels() {
+    return supportedChannels;
+}
+
+// CORRECT -- immutable copy
+private static final List<String> SUPPORTED_CHANNELS = List.of("EMAIL", "SMS", "PUSH");
+
+public List<String> getSupportedChannels() {
+    return SUPPORTED_CHANNELS;
+}
+```
+
+**Null safety** -- Never return `null` from public methods. Use `Optional<T>` for optional return values in non-reactive code, `Mono.empty()` in reactive code. Never pass `null` as an argument:
+
+```java
+// WRONG
+public Customer findByEmail(String email) {
+    return repository.find(email); // may return null
+}
+
+// CORRECT (reactive)
+public Mono<Customer> findByEmail(String email) {
+    return repository.findByEmail(email); // Mono.empty() when not found
+}
+
+// CORRECT (non-reactive, rare)
+public Optional<Customer> findByEmail(String email) {
+    return Optional.ofNullable(repository.find(email));
+}
+```
+
+### Dependency injection
+
+**No field injection** -- `@Autowired` on fields is prohibited. Use constructor injection via `@RequiredArgsConstructor` with `final` fields. This makes dependencies explicit, enables immutability, and simplifies testing:
+
+```java
+// WRONG -- field injection
+@Service
+public class PaymentService {
+    @Autowired
+    private AccountApi accountApi;
+    @Autowired
+    private LedgerApi ledgerApi;
+}
+
+// CORRECT -- constructor injection via Lombok
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class PaymentService {
+    private final AccountApi accountApi;
+    private final LedgerApi ledgerApi;
+}
+```
+
+Exception: `@Value("${property}")` on fields is acceptable for injecting simple configuration values when a `@ConfigurationProperties` class would be overkill.
+
+### Error handling in catch blocks
+
+These rules complement sections 3 and 7, which define WHAT to throw. This section defines HOW to catch.
+
+**No empty catch blocks** -- Every `catch` must either log the error, rethrow, or translate the exception. Silent `catch` blocks hide bugs:
+
+```java
+// WRONG -- exception silently swallowed
+try {
+    externalService.call(request);
+} catch (Exception e) { }
+
+// CORRECT -- log and translate
+try {
+    externalService.call(request);
+} catch (ExternalServiceException e) {
+    log.error("External call failed: requestId={}", request.getId(), e);
+    throw new ThirdPartyServiceException("External service unavailable", e);
+}
+```
+
+**Catch specific exceptions** -- Never catch `Exception` or `Throwable` generically. Catch the narrowest type possible. In reactive chains, use `.onErrorMap()` to translate technical exceptions into domain exceptions:
+
+```java
+// WRONG -- catches everything
+return webClient.get().retrieve().bodyToMono(AccountDTO.class)
+    .onErrorResume(Exception.class, e -> Mono.empty());
+
+// CORRECT -- specific exception handling with translation
+return webClient.get().retrieve().bodyToMono(AccountDTO.class)
+    .onErrorMap(WebClientResponseException.NotFound.class,
+        e -> new ResourceNotFoundException("Account", accountId))
+    .onErrorMap(WebClientResponseException.class,
+        e -> new ThirdPartyServiceException("Account service error", e));
+```
+
+**No `e.printStackTrace()`** -- Always use the logger: `log.error("Context message: param={}", paramValue, e)`. The SLF4J pattern includes the stack trace when the exception is the last argument.
+
+### Naming and readability
+
+**Boolean naming** -- Boolean variables and methods must use prefixes that read as questions: `is`, `has`, `can`, `should`:
+
+```java
+// WRONG
+boolean active;
+boolean permission;
+public boolean validate() { ... }
+
+// CORRECT
+boolean isActive;
+boolean hasPermission;
+public boolean isValid() { ... }
+public boolean canTransfer() { ... }
+public boolean shouldRetry() { ... }
+```
+
+**Consistent verb/noun naming** -- Methods use action verbs (`calculate`, `validate`, `find`, `create`, `process`). Classes use nouns or noun phrases (`PaymentProcessor`, `AccountValidator`). Avoid cryptic abbreviations in class names (`mgr`, `ctx`, `svc` are not acceptable as class name fragments -- `Manager`, `Context`, `Service` are):
+
+```java
+// WRONG
+public class AcctMgr { ... }
+public class TxnSvc { ... }
+
+// CORRECT
+public class AccountManager { ... }
+public class TransactionService { ... }
+```
+
+### Code structure
+
+**Magic numbers** -- No numeric literals in business logic. Extract to named constants with descriptive names:
+
+```java
+// WRONG -- what does 3 mean?
+if (retries > 3) {
+    throw new RetryExhaustedException("Max retries exceeded");
+}
+
+// CORRECT
+private static final int MAX_RETRY_ATTEMPTS = 3;
+
+if (retries > MAX_RETRY_ATTEMPTS) {
+    throw new RetryExhaustedException("Max retries exceeded");
+}
+```
+
+**SLF4J placeholders in logs** -- Always use `{}` placeholders. Never use string concatenation in log statements (it evaluates the concatenation even when the log level is disabled):
+
+```java
+// WRONG -- string concatenation
+log.info("Processing order " + orderId + " for customer " + customerId);
+log.debug("Payload: " + payload.toString());
+
+// CORRECT -- SLF4J placeholders
+log.info("Processing order: orderId={}, customerId={}", orderId, customerId);
+log.debug("Payload: {}", payload);
+```
+
+**No obvious comments** -- Comments that restate what the code already says must be removed. The code should be self-explanatory through good naming. Javadoc (section 18) covers public API documentation; inside method bodies, code speaks for itself:
+
+```java
+// WRONG -- the comment adds nothing
+// Get the account by ID
+Account account = accountService.findById(accountId);
+// Check if account is active
+if (account.isActive()) { ... }
+
+// CORRECT -- code is self-explanatory, no comment needed
+Account account = accountService.findById(accountId);
+if (account.isActive()) { ... }
+```
+
+Reserve comments for non-obvious business rules, workarounds, or decisions that future readers would question.
+
+### Reactive-specific clean code
+
+These rules complement section 2 (Reactive Rules).
+
+**No loose `.subscribe()`** -- Manual subscriptions inside handlers, services, or saga steps are a code smell. The framework (WebFlux, CommandBus, WorkflowEngine) manages the subscription lifecycle. A loose `.subscribe()` creates fire-and-forget flows with no error propagation:
+
+```java
+// WRONG -- lose .subscribe() breaks the reactive chain
+@Override
+protected Mono<OrderResult> doHandle(CreateOrderCommand command) {
+    notificationService.sendConfirmation(command.getOrderId()).subscribe();
+    return orderService.create(command);
+}
+
+// CORRECT -- compose into the chain
+@Override
+protected Mono<OrderResult> doHandle(CreateOrderCommand command) {
+    return orderService.create(command)
+        .flatMap(result -> notificationService.sendConfirmation(result.getOrderId())
+            .thenReturn(result));
+}
+```
+
+**Decompose long reactive chains** -- When a chain exceeds ~5 operators, extract segments into private methods with descriptive names. This makes the flow readable and each segment individually testable:
+
+```java
+// WRONG -- long monolithic chain
+return customerApi.findByPartyId(partyId)
+    .flatMap(customer -> kycApi.openCase(customer.getId())
+        .flatMap(kycCase -> documentApi.requestDocuments(kycCase.getCaseId())
+            .flatMap(docs -> verificationApi.verify(docs)
+                .flatMap(result -> statusApi.updateStatus(partyId, result.getStatus())))));
+
+// CORRECT -- decomposed into named steps
+return findCustomer(partyId)
+    .flatMap(this::openKycCase)
+    .flatMap(this::requestDocuments)
+    .flatMap(this::verifyDocuments)
+    .flatMap(result -> updateStatus(partyId, result));
+```
+
 ## 17. PII Logging Rules
 
 Never log personally identifiable information (PII). Use resource identifiers instead:
@@ -938,6 +1202,19 @@ If you are building the upper layer first and the lower-layer endpoint does not 
 | String identifiers | `static final String` constants in the owning class | Raw string literals scattered across files |
 | Dead code | Remove unused fields, methods, beans, imports after refactoring | Comment out, `@Deprecated` for "maybe later", unused `@Bean` methods |
 | Ternary operators | Explicit `if`/`else` blocks | Ternary expressions (unless removing them requires disproportionate effort) |
+| Method length | ~20-25 lines max, single responsibility | Long methods doing multiple things |
+| Parameters | >3 params → use request/command object | Methods with 4+ loose parameters |
+| Nesting | Max 2 levels, guard clauses + early return | Arrow anti-pattern (deep `if`/`for` nesting) |
+| Immutability | `final` fields, `List.of()`, `Map.of()` | Mutable fields, exposed mutable collections |
+| Null safety | `Optional<T>`, `Mono.empty()`, never return `null` | Returning `null`, passing `null` as argument |
+| Injection | `@RequiredArgsConstructor` + `final` fields | `@Autowired` on fields (field injection) |
+| Catch blocks | Log or rethrow, catch specific types, `.onErrorMap()` | Empty `catch {}`, catch `Exception`/`Throwable`, `e.printStackTrace()` |
+| Boolean naming | `isActive`, `hasPermission`, `canTransfer` | `active()`, `permission()`, `validate()` returning boolean |
+| Magic numbers | Named constants: `MAX_RETRY_ATTEMPTS` | Numeric literals in business logic: `if (retries > 3)` |
+| Log messages | SLF4J placeholders: `log.info("x={}", x)` | String concatenation: `log.info("x=" + x)` |
+| Comments | Only for non-obvious business rules or workarounds | Obvious comments that restate the code |
+| `.subscribe()` | Compose into the reactive chain with `flatMap`/`then` | Loose `.subscribe()` inside handlers/services |
+| Reactive chains | Decompose into named methods after ~5 operators | Monolithic nested `flatMap` chains |
 | Cache keys | Prefix with `firefly:cache:{name}:` | Unprefixed keys |
 | Error responses | RFC 7807 `ProblemDetail` / `ErrorResponse` | Custom error JSON shapes |
 | Security | `@Secure(roles = {...})` | Inline `SecurityContextHolder` checks |
