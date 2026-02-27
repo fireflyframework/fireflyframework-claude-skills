@@ -550,22 +550,35 @@ springdoc:
 
 ## 14. Configuration Properties
 
-### @ConfigurationProperties without @Configuration
+### @Component on @ConfigurationProperties classes
 
-When the application class has `@ConfigurationPropertiesScan`, properties classes only need `@ConfigurationProperties` -- do NOT add `@Configuration`:
+Properties classes annotated with `@ConfigurationProperties` must also carry `@Component` so that Spring's component scan discovers and registers them as beans. Without `@Component`, the properties class is not a managed bean and its dependencies (e.g., injection into `ClientFactory` constructors) will fail at runtime.
+
+Do NOT use `@Configuration` -- it is meant for classes that declare `@Bean` methods, not for simple property holders.
 
 ```java
-// CORRECT -- discovered by @ConfigurationPropertiesScan
-@ConfigurationProperties(prefix = "api-configuration.customer-mgmt")
+// CORRECT -- @Component makes the class a Spring-managed bean
+@Component
+@ConfigurationProperties(prefix = "api-configuration.common-platform.customer-mgmt")
+@Data
 public class CustomerMgmtProperties {
     private String basePath;
-    // getters and setters
 }
 
-// WRONG -- @Configuration is unnecessary and causes bean conflicts
+// WRONG -- missing @Component, not discovered by component scan
+@ConfigurationProperties(prefix = "api-configuration.common-platform.customer-mgmt")
+@Data
+public class CustomerMgmtProperties {
+    private String basePath;
+}
+
+// WRONG -- @Configuration is for bean-declaring classes, not property holders
 @Configuration
-@ConfigurationProperties(prefix = "api-configuration.customer-mgmt")
-public class CustomerMgmtProperties { ... }
+@ConfigurationProperties(prefix = "api-configuration.common-platform.customer-mgmt")
+@Data
+public class CustomerMgmtProperties {
+    private String basePath;
+}
 ```
 
 ### @ConfigurationProperties prefix convention
@@ -869,7 +882,7 @@ If you are building the upper layer first and the lower-layer endpoint does not 
 | DTOs | `@Data @Builder` + suffix `DTO` | Mutable POJOs, no suffix |
 | Mappers | `@Mapper(componentModel = SPRING)` as abstract class | Manual mapping code, interface mappers with injections |
 | Config classes | `@Configuration` + `*AutoConfiguration` suffix | `@Component` for config |
-| Properties | `@ConfigurationProperties(prefix = "firefly.xxx")` | `@Value` for complex config |
+| Properties | `@Component` + `@ConfigurationProperties(prefix = "firefly.xxx")` | `@ConfigurationProperties` without `@Component`, or with `@Configuration` |
 | Properties prefix | `api-configuration.{tier-category}.{service}` (e.g., `common-platform.customer-mgmt`, `domain-platform.customer-people`) | Generic tier name without `-platform` (e.g., `domain.customer-people`) |
 | Profiles | `dev`, `pre`, `pro` | `local`, `staging`, `testing`, `production` |
 | Versioning | CalVer `YY.MM.patch` (e.g., `26.02.06`) | SemVer |
