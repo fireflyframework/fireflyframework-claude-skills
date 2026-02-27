@@ -166,9 +166,28 @@ public abstract class WebhookEventMapper {
 
 - `@Data @Builder @NoArgsConstructor @AllArgsConstructor` on DTOs and model classes
 - `@Getter` on exception classes (see `BusinessException`)
-- `@Slf4j` on all service classes, handlers, and configuration classes
+- `@Slf4j` on all classes that need logging -- never instantiate a logger manually
+- `@RequiredArgsConstructor` on classes with `final` dependencies (replaces hand-written constructor)
 - Lombok is `<scope>provided</scope>` or `<optional>true</optional>` -- never a transitive dependency
 - Annotation processor order: Lombok -> MapStruct -> lombok-mapstruct-binding -> spring-boot-configuration-processor
+
+```java
+// CORRECT -- @Slf4j generates the `log` field at compile time
+@Slf4j
+@Service
+public class PaymentService {
+    public Mono<PaymentResult> process(PaymentRequest request) {
+        log.info("Processing payment: paymentId={}", request.getPaymentId());
+        // ...
+    }
+}
+
+// WRONG -- manual logger declaration
+@Service
+public class PaymentService {
+    private static final Logger log = LoggerFactory.getLogger(PaymentService.class);
+}
+```
 
 ## 5. POM Conventions
 
@@ -572,7 +591,76 @@ spring.config.activate.on-profile: pre
 spring.config.activate.on-profile: testing
 ```
 
-## 15. PII Logging Rules
+## 15. Code Hygiene
+
+### Extract hardcoded strings into named constants
+
+Repeated string literals used as identifiers (step IDs, signal names, event types, query names, status values, configuration keys) must be declared as `static final String` constants. This applies to workflow/saga definitions, service implementations, controllers, and tests.
+
+**Where to place constants:**
+- **Workflow/Saga classes**: Own their step IDs, signal names, variable names, phase labels, and status values as `public static final` fields. These form the contract that service classes and tests reference.
+- **Service classes**: Reference constants from the workflow/saga instead of declaring their own copies. Remove duplicate `private static final` fields.
+- **Controllers**: Declare `private static final` fields for response map keys and response status strings specific to the REST API (e.g., `KEY_STATUS`, `STATUS_INITIATED`).
+- **Tests**: Use `static import` of the constants from the owning class.
+
+```java
+// CORRECT -- constants in the workflow class (single source of truth)
+@Workflow(id = IndividualOnboardingWorkflow.WORKFLOW_ID)
+public class IndividualOnboardingWorkflow {
+
+    public static final String WORKFLOW_ID = "individual-onboarding";
+    public static final String STEP_REGISTER_PARTY = "register-party";
+    public static final String SIGNAL_PERSONAL_DATA = "personal-data-submitted";
+    public static final String PHASE_AWAITING_DOCS = "AWAITING_DOCUMENTS";
+
+    @WorkflowStep(id = STEP_REGISTER_PARTY)
+    public Mono<UUID> registerParty(@Input Command cmd) { ... }
+}
+
+// CORRECT -- service references the workflow's constants
+public class OnboardingServiceImpl {
+    return signalService.signal(cid, IndividualOnboardingWorkflow.SIGNAL_PERSONAL_DATA, command);
+}
+
+// CORRECT -- test uses static import
+import static com.example.workflows.IndividualOnboardingWorkflow.*;
+assertThat(status.getCurrentPhase()).isEqualTo(PHASE_AWAITING_DOCS);
+
+// WRONG -- raw string literals scattered across files
+@WorkflowStep(id = "register-party")
+return signalService.signal(cid, "personal-data-submitted", command);
+assertThat(status.getCurrentPhase()).isEqualTo("AWAITING_DOCUMENTS");
+```
+
+Java `static final String` fields initialized with string literals are compile-time constant expressions, so they can be used in annotation values (`@WorkflowStep(id = CONSTANT)`, `@WaitForSignal(CONSTANT)`, `@FromStep(CONSTANT)`).
+
+### Remove dead code
+
+Unused fields, methods, imports, and classes must be removed — not commented out, not annotated with `@Deprecated`, not left as "maybe useful later". Dead code increases cognitive load and hides real usage patterns.
+
+**Systematic approach:**
+1. After any refactoring or migration, grep for every field and method in the changed classes to verify they are still referenced.
+2. Remove fields that are injected but never called (e.g., an SDK client declared in the constructor but never used in any method).
+3. Remove command/DTO fields that are not read by any consumer (workflow, handler, or mapper).
+4. Remove `@Bean` methods in factory classes when the produced bean is not injected anywhere.
+5. Remove imports that become orphaned after field/method removal.
+
+```java
+// WRONG -- KybApi injected but never called
+@Component
+public class KycKybClientFactory {
+    @Bean public KycApi kycApi() { return new KycApi(apiClient); }
+    @Bean public KybApi kybApi() { return new KybApi(apiClient); } // unused
+}
+
+// CORRECT -- only beans that are actually consumed
+@Component
+public class KycKybClientFactory {
+    @Bean public KycApi kycApi() { return new KycApi(apiClient); }
+}
+```
+
+## 16. PII Logging Rules
 
 Never log personally identifiable information (PII). Use resource identifiers instead:
 
@@ -588,7 +676,7 @@ log.info("Payment initiated: paymentId={} consentId={}", paymentId, consentId);
 
 PII includes: names, emails, phone numbers, addresses, IBANs, account numbers, SSNs, tax IDs, passport numbers, API keys, passwords, and card data.
 
-## 16. Javadoc Documentation Requirements
+## 17. Javadoc Documentation Requirements
 
 All generated code must include Javadoc documentation:
 
@@ -629,7 +717,7 @@ public Mono<SagaResult> verify(UUID caseId) { ... }
 - Simple getters/setters (Lombok-generated)
 - Test methods (the test name should be self-explanatory)
 
-## 17. README.md Documentation Standards
+## 18. README.md Documentation Standards
 
 Every microservice MUST have a `README.md` at the project root with the following structure:
 
@@ -685,7 +773,7 @@ Include prerequisites, database setup, and Maven commands.}
 that consume this service's SDK.}
 ```
 
-## 18. Cross-Layer Reflexive Property
+## 19. Cross-Layer Reflexive Property
 
 When generating code for an upper-layer service (domain or app tier) that calls a lower-layer service (core tier), if the lower-layer method does not exist, you MUST create it. Never leave upper-layer methods returning static/mock data or empty results.
 
@@ -748,7 +836,9 @@ If you are building the upper layer first and the lower-layer endpoint does not 
 | Web framework | Spring WebFlux | Spring MVC |
 | CQRS handlers | Extend `CommandHandler<C,R>` / `QueryHandler<Q,R>` | Implement interfaces directly |
 | Handler registration | `@CommandHandlerComponent` / `@QueryHandlerComponent` | Manual `CommandBus.register()` |
-| Logging | `@Slf4j` (Lombok) with resource IDs only | `Logger.getLogger()`, logging PII (names, emails, IBANs) |
+| Logging | `@Slf4j` (Lombok) with resource IDs only | `LoggerFactory.getLogger()`, logging PII (names, emails, IBANs) |
+| String identifiers | `static final String` constants in the owning class | Raw string literals scattered across files |
+| Dead code | Remove unused fields, methods, beans, imports after refactoring | Comment out, `@Deprecated` for "maybe later", unused `@Bean` methods |
 | Cache keys | Prefix with `firefly:cache:{name}:` | Unprefixed keys |
 | Error responses | RFC 7807 `ProblemDetail` / `ErrorResponse` | Custom error JSON shapes |
 | Security | `@Secure(roles = {...})` | Inline `SecurityContextHolder` checks |
