@@ -715,7 +715,49 @@ public class KycKybClientFactory {
 }
 ```
 
-## 16. PII Logging Rules
+### Avoid ternary operators
+
+Ternary expressions (`condition ? a : b`) reduce readability, especially when nested or combined with method calls. Prefer explicit `if`/`else` blocks. Only keep a ternary when replacing it would require disproportionate effort (e.g., deeply embedded in a complex reactive chain where extracting it would hurt clarity more than help).
+
+```java
+// WRONG -- ternary obscures intent
+String status = customer.isActive() ? "ACTIVE" : "INACTIVE";
+return account.getBalance().compareTo(BigDecimal.ZERO) > 0
+    ? Mono.just(account)
+    : Mono.error(new InsufficientFundsException(account.getId()));
+
+// CORRECT -- explicit control flow
+String status;
+if (customer.isActive()) {
+    status = "ACTIVE";
+} else {
+    status = "INACTIVE";
+}
+
+if (account.getBalance().compareTo(BigDecimal.ZERO) > 0) {
+    return Mono.just(account);
+}
+return Mono.error(new InsufficientFundsException(account.getId()));
+```
+
+Nested ternaries are never acceptable:
+
+```java
+// NEVER -- nested ternary
+String tier = score > 800 ? "PLATINUM" : score > 600 ? "GOLD" : "STANDARD";
+
+// CORRECT
+String tier;
+if (score > 800) {
+    tier = "PLATINUM";
+} else if (score > 600) {
+    tier = "GOLD";
+} else {
+    tier = "STANDARD";
+}
+```
+
+## 17. PII Logging Rules
 
 Never log personally identifiable information (PII). Use resource identifiers instead:
 
@@ -731,7 +773,7 @@ log.info("Payment initiated: paymentId={} consentId={}", paymentId, consentId);
 
 PII includes: names, emails, phone numbers, addresses, IBANs, account numbers, SSNs, tax IDs, passport numbers, API keys, passwords, and card data.
 
-## 17. Javadoc Documentation Requirements
+## 18. Javadoc Documentation Requirements
 
 All generated code must include Javadoc documentation:
 
@@ -772,7 +814,7 @@ public Mono<SagaResult> verify(UUID caseId) { ... }
 - Simple getters/setters (Lombok-generated)
 - Test methods (the test name should be self-explanatory)
 
-## 18. README.md Documentation Standards
+## 19. README.md Documentation Standards
 
 Every microservice MUST have a `README.md` at the project root with the following structure:
 
@@ -828,7 +870,7 @@ Include prerequisites, database setup, and Maven commands.}
 that consume this service's SDK.}
 ```
 
-## 19. Cross-Layer Reflexive Property
+## 20. Cross-Layer Reflexive Property
 
 When generating code for an upper-layer service (domain or app tier) that calls a lower-layer service (core tier), if the lower-layer method does not exist, you MUST create it. Never leave upper-layer methods returning static/mock data or empty results.
 
@@ -895,6 +937,7 @@ If you are building the upper layer first and the lower-layer endpoint does not 
 | Logging | `@Slf4j` (Lombok) with resource IDs only | `LoggerFactory.getLogger()`, logging PII (names, emails, IBANs) |
 | String identifiers | `static final String` constants in the owning class | Raw string literals scattered across files |
 | Dead code | Remove unused fields, methods, beans, imports after refactoring | Comment out, `@Deprecated` for "maybe later", unused `@Bean` methods |
+| Ternary operators | Explicit `if`/`else` blocks | Ternary expressions (unless removing them requires disproportionate effort) |
 | Cache keys | Prefix with `firefly:cache:{name}:` | Unprefixed keys |
 | Error responses | RFC 7807 `ProblemDetail` / `ErrorResponse` | Custom error JSON shapes |
 | Security | `@Secure(roles = {...})` | Inline `SecurityContextHolder` checks |
