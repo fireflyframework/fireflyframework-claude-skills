@@ -568,6 +568,48 @@ public class CustomerMgmtProperties {
 public class CustomerMgmtProperties { ... }
 ```
 
+### @ConfigurationProperties prefix convention
+
+The prefix follows the pattern `api-configuration.{tier-category}.{service-short-name}`, where `{tier-category}` encodes the **downstream service's tier** (not the caller's):
+
+| Downstream service tier | Tier category | Example prefix |
+|-------------------------|---------------|----------------|
+| `core-common-*` | `common-platform` | `api-configuration.common-platform.customer-mgmt` |
+| `core-lending-*` | `core-lending` | `api-configuration.core-lending.loan-origination` |
+| `core-banking-*` | `core-banking` | `api-configuration.core-banking.accounts` |
+| `domain-*` | `domain-platform` | `api-configuration.domain-platform.customer-people` |
+
+The corresponding YAML uses the same flat dotted key under `api-configuration:`:
+
+```java
+// CORRECT -- tier category matches the downstream service's tier
+@ConfigurationProperties(prefix = "api-configuration.common-platform.notification-services")
+public class NotificationServicesProperties {
+    private String basePath;
+}
+
+// WRONG -- generic category does not identify the downstream tier
+@ConfigurationProperties(prefix = "api-configuration.domain.common-notifications")
+public class CommonNotificationsProperties {
+    private String basePath;
+}
+```
+
+```yaml
+# CORRECT -- flat dotted keys with tier category
+api-configuration:
+  common-platform.notification-services:
+    base-path: http://localhost:8095
+  domain-platform.customer-people:
+    base-path: http://localhost:8081
+
+# WRONG -- nested keys, generic tier category
+api-configuration:
+  domain:
+    customer-people:
+      base-path: http://localhost:8081
+```
+
 ### Actuator Health Details
 
 Health endpoint details should be `when-authorized` (not `always`) in all environments:
@@ -828,6 +870,7 @@ If you are building the upper layer first and the lower-layer endpoint does not 
 | Mappers | `@Mapper(componentModel = SPRING)` as abstract class | Manual mapping code, interface mappers with injections |
 | Config classes | `@Configuration` + `*AutoConfiguration` suffix | `@Component` for config |
 | Properties | `@ConfigurationProperties(prefix = "firefly.xxx")` | `@Value` for complex config |
+| Properties prefix | `api-configuration.{tier-category}.{service}` (e.g., `common-platform.customer-mgmt`, `domain-platform.customer-people`) | Generic tier name without `-platform` (e.g., `domain.customer-people`) |
 | Profiles | `dev`, `pre`, `pro` | `local`, `staging`, `testing`, `production` |
 | Versioning | CalVer `YY.MM.patch` (e.g., `26.02.06`) | SemVer |
 | Parent POM | Inherit from `fireflyframework-parent` | Define your own plugin/dependency management |
