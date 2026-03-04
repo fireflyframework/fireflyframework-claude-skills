@@ -556,7 +556,7 @@ For comprehensive testing patterns including StepVerifier-based reactive asserti
 
 ## 11. Common Mistakes
 
-**Non-idempotent steps.** Saga steps may be retried. If a step calls an external API that charges money, a retry creates a double charge. Always use `idempotencyKey` or design steps to be naturally idempotent (check-then-act pattern).
+**Non-idempotent steps.** Saga steps may be retried. If a step calls an external API that charges money, a retry creates a double charge. Always use `idempotencyKey` or design steps to be naturally idempotent (check-then-act pattern). When saga steps dispatch commands to `CommandHandler` classes that call SDK APIs, every mutating SDK call must pass `UUID.randomUUID().toString()` as the `xIdempotencyKey` parameter — never `null`.
 
 **Missing compensation.** Every step that creates or modifies state MUST have a `compensate` method. If a step after yours fails, your step's side effects remain without compensation. The `send-welcome` pattern (no compensation) is only safe for non-destructive actions.
 
@@ -583,3 +583,5 @@ ctx.setStepStatus(stepId, StepStatus.DONE);
 ```
 
 **Returning mock/static data from service methods.** When building a domain service that calls core services via SDK, never return static data or hardcoded values because the core service endpoint "doesn't exist yet". Either create the endpoint in the core service, or define a port interface with a stub adapter that throws `NotImplementedException`. Empty or mock returns in production code hide integration gaps and create silent failures.
+
+**Passing `null` for `xIdempotencyKey` on SDK calls.** Generated SDK methods include an `xIdempotencyKey` parameter for every endpoint. When saga steps or their handlers call mutating SDK operations (POST, PUT, PATCH), they must pass `UUID.randomUUID().toString()` — never `null`. Passing `null` silently disables idempotency protection, and saga retries will create duplicate resources in downstream services.

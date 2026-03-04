@@ -482,7 +482,11 @@ public Mono<ResponseEntity<Resource>> createResource(@RequestBody Resource resou
 
 - Output format is **OpenAPI 3.0.1** (set via `springdoc.api-docs.version: openapi_3_0`)
 - The `X-Idempotency-Key` header is automatically injected into every operation by
-  `IdempotencyOpenAPICustomizer` unless the controller method has `@DisableIdempotency`
+  `IdempotencyOpenAPICustomizer` unless the controller method has `@DisableIdempotency`.
+  **SDK consumers** must pass `UUID.randomUUID().toString()` as the `xIdempotencyKey`
+  parameter on every mutating call (POST, PUT, PATCH). Never pass `null` — it silently
+  disables duplicate protection. The `xIdempotencyKey` is always the first `String`
+  parameter after the request body in the generated SDK method signature
 - Tags from `@Tag` annotations become top-level `tags` entries in the spec
 - `operationId` is derived from the Java method name
 - The spec is written to `<service>-web/target/openapi/openapi.yml`

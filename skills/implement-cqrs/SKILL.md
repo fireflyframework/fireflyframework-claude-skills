@@ -651,3 +651,19 @@ Group commands with their handlers and result types in a `command` package. Grou
 9. **Ignoring validation results in `customValidate()`** -- Always return `Mono.just(ValidationResult.success())` on the happy path. Returning `Mono.empty()` or `null` will cause a `NullPointerException` in the validation pipeline.
 
 10. **Heavy logic in `authorize()`** -- Authorization runs before every command/query execution. Keep it fast. Avoid database round-trips in `authorize()` when possible; prefer caching authorization decisions or using lightweight token-based checks.
+
+11. **Missing idempotency keys on SDK calls** -- When a `doHandle()` method calls a downstream service via its generated SDK, every mutating call (POST, PUT, PATCH) must pass `UUID.randomUUID().toString()` as the `xIdempotencyKey` parameter. Never pass `null` — it silently disables duplicate protection. This is critical when handlers are invoked from saga steps that may be retried.
+
+```java
+// CORRECT -- always generate a UUID for the idempotency key
+@Override
+protected Mono<ComplianceCaseDTO> doHandle(CreateKybCaseCommand cmd) {
+    return complianceCasesApi.createComplianceCase(cmd, UUID.randomUUID().toString());
+}
+
+// WRONG -- null disables idempotency; retries create duplicate resources
+@Override
+protected Mono<ComplianceCaseDTO> doHandle(CreateKybCaseCommand cmd) {
+    return complianceCasesApi.createComplianceCase(cmd, null);
+}
+```
