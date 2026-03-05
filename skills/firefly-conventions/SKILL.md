@@ -1340,3 +1340,25 @@ return response.flatMap(r -> {
 | Cross-layer methods | Implement full call chain to lower layers | Return static/mock data from service methods |
 | Javadoc | Document all public classes and methods | Skip documentation entirely |
 | README.md | Include in every microservice root | Leave services undocumented |
+
+## Language Rule (Mandatory)
+
+**All code and documentation must be written in English.** This is a non-negotiable convention across the entire Firefly platform.
+
+This rule applies to:
+
+| Artifact | Examples |
+|----------|----------|
+| Class, method, and variable names | `LoanApplicationService`, `calculateInterestRate()`, `remainingBalance` |
+| Constants and enum values | `PENDING_APPROVAL`, `RiskLevel.HIGH` |
+| Javadoc and inline comments | `/** Initiates the KYC verification process. */` |
+| Log messages | `log.info("Loan application submitted: applicationId={}", id)` |
+| OpenAPI annotations | `@Operation(summary = "Create a new loan application")` |
+| Exception messages | `"Customer not found for partyId: " + partyId` |
+| TODO comments | `// TODO: Replace stub with real Equifax integration` |
+| Test method names and assertions | `shouldReturnLoanApplicationWhenIdExists()` |
+| Commit messages and branch names | `feat/kyc-doc-verification`, `fix: resolve null pointer in payment flow` |
+| README files | Written entirely in English |
+| YAML configuration comments | `# Maximum retry attempts for downstream calls` |
+
+**Even if requirements, tickets, or conversations are in another language**, the resulting code, documentation, and configuration must always be in English. This ensures consistency across all 70+ services in the platform and enables any developer — regardless of native language — to read and maintain the codebase.
